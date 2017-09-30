@@ -2198,7 +2198,7 @@ class Image(object):
         return self.copy()
 
     def _rotate_based_on_exif(self):
-        from .JpegImagePlugin import _getexif, _patchexif
+        from .JpegImagePlugin import _parse_exif, _patch_exif
         transpositions = {
             2: FLIP_LEFT_RIGHT,
             3: ROTATE_180,
@@ -2208,22 +2208,22 @@ class Image(object):
             7: TRANSVERSE,
             8: ROTATE_90,
         }
-        if "exif" not in self.info:
+        exif_bytes = self.info.get("exif")
+        if not exif_bytes:
             return
 
         try:
-            exif = _getexif(self.info['exif']) or {}
-        except (IndexError, IOError, SyntaxError):
-            return
-        orientation = exif.get(0x0112)
-
-        if orientation not in transpositions:
+            exif = _parse_exif(self.info['exif']) or {}
+        except (TypeError, IndexError, IOError, SyntaxError):
             return
 
-        rotated = self.transpose(transpositions[orientation])
-        rotated.info['applied_orientation'] = orientation
-        rotated.info['exif'] = _patchexif(self.info['exif'], 0x0112, 1)
+        transposition = transpositions.get(exif.get(0x0112))
+        if transposition is None:
+            return
 
+        rotated = self.transpose(transposition)
+        rotated.info['applied_transposition'] = transposition
+        rotated.info['exif'] = _patch_exif(exif_bytes, 0x0112, 1)
         return rotated
 
     def effect_spread(self, distance):
