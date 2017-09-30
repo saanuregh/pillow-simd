@@ -42,7 +42,8 @@ class WebPImageFile(ImageFile.ImageFile):
 
     def _getexif(self):
         from .JpegImagePlugin import _getexif
-        return _getexif(self)
+        if "exif" in self.info:
+            return _getexif(self.info["exif"])
 
 
 def _save(im, fp, filename):

@@ -413,7 +413,8 @@ class JpegImageFile(ImageFile.ImageFile):
         self.tile = []
 
     def _getexif(self):
-        return _getexif(self)
+        if "exif" in self.info:
+            return _getexif(self.info["exif"])
 
     def _getmp(self):
         return _getmp(self)
@@ -433,17 +434,13 @@ def _fixup_dict(src_dict):
     return {k: _fixup(v) for k, v in src_dict.items()}
 
 
-def _getexif(self):
+def _getexif(data):
     # Extract EXIF information.  This method is highly experimental,
     # and is likely to be replaced with something better in a future
     # version.
 
     # The EXIF record consists of a TIFF file embedded in a JPEG
     # application marker (!).
-    try:
-        data = self.info["exif"]
-    except KeyError:
-        return None
     file = io.BytesIO(data[6:])
     head = file.read(8)
     # process dictionary
