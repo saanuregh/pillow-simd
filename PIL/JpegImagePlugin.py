@@ -414,7 +414,7 @@ class JpegImageFile(ImageFile.ImageFile):
 
     def _getexif(self):
         if "exif" in self.info:
-            return _getexif(self.info["exif"])
+            return _parse_exif(self.info["exif"])
 
     def _getmp(self):
         return _getmp(self)
@@ -434,7 +434,16 @@ def _fixup_dict(src_dict):
     return {k: _fixup(v) for k, v in src_dict.items()}
 
 
-def _getexif(data):
+def _getexif(self):
+    # For compatibility only
+    try:
+        data = self.info["exif"]
+    except KeyError:
+        return None
+    return _parse_exif(data)
+
+
+def _parse_exif(data):
     # Extract EXIF information.  This method is highly experimental,
     # and is likely to be replaced with something better in a future
     # version.

@@ -41,9 +41,9 @@ class WebPImageFile(ImageFile.ImageFile):
         self.tile = [("raw", (0, 0) + self.size, 0, self.mode)]
 
     def _getexif(self):
-        from .JpegImagePlugin import _getexif
+        from .JpegImagePlugin import _parse_exif
         if "exif" in self.info:
-            return _getexif(self.info["exif"])
+            return _parse_exif(self.info["exif"])
 
 
 def _save(im, fp, filename):
