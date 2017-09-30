@@ -2190,6 +2190,42 @@ class Image(object):
         self.load()
         return self._new(self.im.transpose(method))
 
+    def autorotate(self):
+        rotated = self._rotate_based_on_exif()
+        if rotated:
+            return rotated
+        # no exif, unknown orientation or noop orientation
+        return self.copy()
+
+    def _rotate_based_on_exif(self):
+        from .JpegImagePlugin import _getexif, _patchexif
+        transpositions = {
+            2: FLIP_LEFT_RIGHT,
+            3: ROTATE_180,
+            4: FLIP_TOP_BOTTOM,
+            5: TRANSPOSE,
+            6: ROTATE_270,
+            7: TRANSVERSE,
+            8: ROTATE_90,
+        }
+        if "exif" not in self.info:
+            return
+
+        try:
+            exif = _getexif(self.info['exif']) or {}
+        except (IndexError, IOError, SyntaxError):
+            return
+        orientation = exif.get(0x0112)
+
+        if orientation not in transpositions:
+            return
+
+        rotated = self.transpose(transpositions[orientation])
+        rotated.info['applied_orientation'] = orientation
+        rotated.info['exif'] = _patchexif(self.info['exif'], 0x0112, 1)
+
+        return rotated
+
     def effect_spread(self, distance):
         """
         Randomly spread pixels in an image.
