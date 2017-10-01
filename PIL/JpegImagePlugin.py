@@ -484,6 +484,36 @@ def _parse_exif(data):
     return exif
 
 
+def _patch_exif(data, tag, new_value):
+    """
+    Non-destructive operation.
+    Replaces the existing tag in the exif with the new value.
+    If tag not found, do nothing.
+    """
+    from ._binary import i16le, i16be, i32le, i32be
+    from ._binary import o16le, o16be, o32le, o32be
+    if not data or len(data) < 14:
+        return data
+    if i32be(data[0:4]) != 0x45786966 or i16be(data[4:6]) != 0:
+        return data
+
+    if i16le(data[6:8]) == 0x4949:
+        i16, i32, o16, o32 = i16le, i32le, o16le, o32le
+    elif i16le(data[6:8]) == 0x4D4D:
+        i16, i32, o16, o32 = i16be, i32be, o16be, o32be
+    else:
+        return data
+
+    if i16(data[8:10]) != 0x002A:
+        return data
+
+    offset = 8 + i32(data[10:14])
+    count = i16(data[offset-2:offset])
+    print('>>>', offset, count)
+
+    return data
+
+
 def _getmp(self):
     # Extract MP information.  This method was inspired by the "highly
     # experimental" _getexif version that's been in use for years now,

@@ -591,5 +591,16 @@ class TestFileCloseW32(PillowTestCase):
         os.remove(tmpfile)
 
 
+class TestExifPatch(PillowTestCase):
+    def test_null_exif(self):
+        for exif in [
+            None,
+            b'',
+            b'deadbeaf',
+            b'Exif\x00\x00MM\x00*\x00\x00\x00\x08\x00\x00',
+        ]:
+            self.assertEqual(exif, JpegImagePlugin._patch_exif(exif, 0x0112, 1))
+
+
 if __name__ == '__main__':
     unittest.main()
