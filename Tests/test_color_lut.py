@@ -1,7 +1,10 @@
 from __future__ import division
-from helper import unittest, PillowTestCase
+
+import os
+from tempfile import NamedTemporaryFile
 
 from PIL import Image, ImageFilter
+from helper import unittest, PillowTestCase
 
 
 class TestColorLut3DCoreAPI(PillowTestCase):
@@ -198,7 +201,24 @@ class TestColorLut3DCoreAPI(PillowTestCase):
                     -1, -1,  2,   2, -1,  2,
                     -1,  2,  2,   2,  2,  2,
                 ])).load()
+        self.assertEqual(transformed[0, 0], (0, 0, 255))
+        self.assertEqual(transformed[50, 50], (0, 0, 255))
+        self.assertEqual(transformed[255, 0], (0, 255, 255))
+        self.assertEqual(transformed[205, 50], (0, 255, 255))
+        self.assertEqual(transformed[0, 255], (255, 0, 0))
+        self.assertEqual(transformed[50, 205], (255, 0, 0))
+        self.assertEqual(transformed[255, 255], (255, 255, 0))
+        self.assertEqual(transformed[205, 205], (255, 255, 0))
 
+        transformed = im._new(im.im.color_lut_3d('RGB', Image.LINEAR,
+                3, 2, 2, 2,
+                [
+                    -3, -3, -3,   5, -3, -3,
+                    -3,  5, -3,   5,  5, -3,
+
+                    -3, -3,  5,   5, -3,  5,
+                    -3,  5,  5,   5,  5,  5,
+                ])).load()
         self.assertEqual(transformed[0, 0], (0, 0, 255))
         self.assertEqual(transformed[50, 50], (0, 0, 255))
         self.assertEqual(transformed[255, 0], (0, 255, 255))
@@ -211,10 +231,10 @@ class TestColorLut3DCoreAPI(PillowTestCase):
 
 class TestColorLut3DFilter(PillowTestCase):
     def test_wrong_args(self):
-        with self.assertRaisesRegexp(ValueError, "should be an integer"):
+        with self.assertRaisesRegexp(ValueError, "should be either an integer"):
             ImageFilter.Color3DLUT("small", [1])
 
-        with self.assertRaisesRegexp(ValueError, "should be an integer"):
+        with self.assertRaisesRegexp(ValueError, "should be either an integer"):
             ImageFilter.Color3DLUT((11, 11), [1])
 
         with self.assertRaisesRegexp(ValueError, r"in \[2, 65\] range"):
@@ -236,32 +256,37 @@ class TestColorLut3DFilter(PillowTestCase):
             ImageFilter.Color3DLUT((2, 2, 2), [[1, 1]] * 8)
 
     def test_convert_table(self):
-        flt = ImageFilter.Color3DLUT(2, [0, 1, 2] * 8)
-        self.assertEqual(tuple(flt.size), (2, 2, 2))
-        self.assertEqual(flt.name, "Color 3D LUT")
+        lut = ImageFilter.Color3DLUT(2, [0, 1, 2] * 8)
+        self.assertEqual(tuple(lut.size), (2, 2, 2))
+        self.assertEqual(lut.name, "Color 3D LUT")
 
-        flt = ImageFilter.Color3DLUT((2, 2, 2), [
+        lut = ImageFilter.Color3DLUT((2, 2, 2), [
             (0, 1, 2), (3, 4, 5), (6, 7, 8), (9, 10, 11),
             (12, 13, 14), (15, 16, 17), (18, 19, 20), (21, 22, 23)])
-        self.assertEqual(tuple(flt.size), (2, 2, 2))
-        self.assertEqual(flt.table, list(range(24)))
+        self.assertEqual(tuple(lut.size), (2, 2, 2))
+        self.assertEqual(lut.table, list(range(24)))
 
-        flt = ImageFilter.Color3DLUT((2, 2, 2), [(0, 1, 2, 3)] * 8,
+        lut = ImageFilter.Color3DLUT((2, 2, 2), [(0, 1, 2, 3)] * 8,
             channels=4)
 
     def test_generate(self):
-        flt = ImageFilter.Color3DLUT.generate(5, lambda r, g, b: (r, g, b))
-        self.assertEqual(tuple(flt.size), (5, 5, 5))
-        self.assertEqual(flt.name, "Color 3D LUT")
-        self.assertEqual(flt.table[:24], [
+        lut = ImageFilter.Color3DLUT.generate(5, lambda r, g, b: (r, g, b))
+        self.assertEqual(tuple(lut.size), (5, 5, 5))
+        self.assertEqual(lut.name, "Color 3D LUT")
+        self.assertEqual(lut.table[:24], [
             0.0, 0.0, 0.0,  0.25, 0.0, 0.0,  0.5, 0.0, 0.0,  0.75, 0.0, 0.0,
             1.0, 0.0, 0.0,  0.0, 0.25, 0.0,  0.25, 0.25, 0.0,  0.5, 0.25, 0.0])
 
-        flt = ImageFilter.Color3DLUT.generate(5, channels=4,
+        g = Image.linear_gradient('L')
+        im = Image.merge('RGB', [g, g.transpose(Image.ROTATE_90),
+                                 g.transpose(Image.ROTATE_180)])
+        self.assertEqual(im, im.filter(lut))
+
+        lut = ImageFilter.Color3DLUT.generate(5, channels=4,
             callback=lambda r, g, b: (b, r, g, (r+g+b) / 2))
-        self.assertEqual(tuple(flt.size), (5, 5, 5))
-        self.assertEqual(flt.name, "Color 3D LUT")
-        self.assertEqual(flt.table[:24], [
+        self.assertEqual(tuple(lut.size), (5, 5, 5))
+        self.assertEqual(lut.name, "Color 3D LUT")
+        self.assertEqual(lut.table[:24], [
             0.0, 0.0, 0.0, 0.0,  0.0, 0.25, 0.0, 0.125,  0.0, 0.5, 0.0, 0.25,
             0.0, 0.75, 0.0, 0.375,  0.0, 1.0, 0.0, 0.5,  0.0, 0.0, 0.25, 0.125])
 
@@ -271,6 +296,104 @@ class TestColorLut3DFilter(PillowTestCase):
         with self.assertRaisesRegexp(ValueError, "should have a length of 4"):
             ImageFilter.Color3DLUT.generate(5, channels=4,
                 callback=lambda r, g, b: (r, g, b))
+
+    def test_from_cube_file_minimal(self):
+        lut = ImageFilter.Color3DLUT.from_cube_file([
+            "LUT_3D_SIZE 2",
+            "0    0 0.031",
+            "0.96 0 0.031",
+            "0    1 0.031",
+            "0.96 1 0.031",
+            "0    0 0.931",
+            "0.96 0 0.931",
+            "0    1 0.931",
+            "0.96 1 0.931",
+        ])
+        self.assertEqual(tuple(lut.size), (2, 2, 2))
+        self.assertEqual(lut.name, "Color 3D LUT")
+        self.assertEqual(lut.table[:12], [
+            0, 0, 0.031,  0.96, 0, 0.031,  0, 1, 0.031,  0.96, 1, 0.031])
+
+    def test_from_cube_file_parser(self):
+        lut = ImageFilter.Color3DLUT.from_cube_file([
+            " # Comment",
+            'TITLE "LUT name from file"',
+            "  LUT_3D_SIZE 2 3 4",
+            " SKIP THIS",
+            "",
+            " # Comment",
+            "CHANNELS 4",
+            "",
+        ] + [
+            " # Comment",
+            "0    0 0.031 1",
+            "0.96 0 0.031 1",
+            "",
+            "0    1 0.031 1",
+            "0.96 1 0.031 1",
+        ] * 6, target_mode='HSV')
+        self.assertEqual(tuple(lut.size), (2, 3, 4))
+        self.assertEqual(lut.channels, 4)
+        self.assertEqual(lut.name, "LUT name from file")
+        self.assertEqual(lut.mode, 'HSV')
+        self.assertEqual(lut.table[:12], [
+            0, 0, 0.031, 1,  0.96, 0, 0.031, 1,  0, 1, 0.031, 1])
+
+    def test_from_cube_file_errors(self):
+        with self.assertRaisesRegexp(ValueError, "No size found"):
+            lut = ImageFilter.Color3DLUT.from_cube_file([
+                'TITLE "LUT name from file"',
+            ] + [
+                "0    0 0.031",
+                "0.96 0 0.031",
+            ] * 3)
+
+        with self.assertRaisesRegexp(ValueError, "number of colors on line 3"):
+            lut = ImageFilter.Color3DLUT.from_cube_file([
+                'LUT_3D_SIZE 2',
+            ] + [
+                "0    0 0.031",
+                "0.96 0 0.031 1",
+            ] * 3)
+
+        with self.assertRaisesRegexp(ValueError, "1D LUT cube files"):
+            lut = ImageFilter.Color3DLUT.from_cube_file([
+                'LUT_1D_SIZE 2',
+            ] + [
+                "0    0 0.031",
+                "0.96 0 0.031 1",
+            ])
+
+        with self.assertRaisesRegexp(ValueError, "Not a number on line 2"):
+            lut = ImageFilter.Color3DLUT.from_cube_file([
+                'LUT_3D_SIZE 2',
+            ] + [
+                "0  green 0.031",
+                "0.96 0 0.031",
+            ] * 3)
+
+    def test_from_cube_file_filename(self):
+        with NamedTemporaryFile('w+t', delete=False) as f:
+            f.write(
+                "LUT_3D_SIZE 2\n"
+                "0    0 0.031\n"
+                "0.96 0 0.031\n"
+                "0    1 0.031\n"
+                "0.96 1 0.031\n"
+                "0    0 0.931\n"
+                "0.96 0 0.931\n"
+                "0    1 0.931\n"
+                "0.96 1 0.931\n"
+            )
+
+        try:
+            lut = ImageFilter.Color3DLUT.from_cube_file(f.name)
+            self.assertEqual(tuple(lut.size), (2, 2, 2))
+            self.assertEqual(lut.name, "Color 3D LUT")
+            self.assertEqual(lut.table[:12], [
+                0, 0, 0.031,  0.96, 0, 0.031,  0, 1, 0.031,  0.96, 1, 0.031])
+        finally:
+            os.unlink(f.name)
 
 
 if __name__ == '__main__':

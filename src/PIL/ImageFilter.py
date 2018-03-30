@@ -16,6 +16,9 @@
 #
 
 import functools
+from itertools import chain
+
+from ._util import isPath
 
 
 class Filter(object):
@@ -341,9 +344,10 @@ class Color3DLUT(MultibandFilter):
 
         if len(table) != channels * size[0] * size[1] * size[2]:
             raise ValueError(
-                "The table should have channels * size**3 float items "
-                "either size**3 items of channels-sized tuples with floats. "
-                "Table length: {}".format(len(table)))
+                "The table should have either channels * size**3 float items "
+                "or size**3 items of channels-sized tuples with floats. "
+                "Table size: {}x{}x{}. Table length: {}".format(
+                    size[0], size[1], size[2], len(table)))
         self.table = table
 
     @staticmethod
@@ -351,8 +355,8 @@ class Color3DLUT(MultibandFilter):
         try:
             _, _, _ = size
         except ValueError:
-            raise ValueError("Size should be an integer either "
-                             "tuple of three integers.")
+            raise ValueError("Size should be either an integer or "
+                             "a tuple of three integers.")
         except TypeError:
             size = (size, size, size)
         size = [int(x) for x in size]
@@ -384,6 +388,66 @@ class Color3DLUT(MultibandFilter):
                         b / float(size3D-1)))
 
         return cls((size1D, size2D, size3D), table, channels, target_mode)
+
+    @classmethod
+    def from_cube_file(cls, lines, target_mode=None):
+        name, size = None, None
+        channels = 3
+        file = None
+
+        if isPath(lines):
+            file = lines = open(lines, 'rt')
+
+        try:
+            iterator = iter(lines)
+
+            for i, line in enumerate(iterator, 1):
+                line = line.strip()
+                if line.startswith('TITLE "'):
+                    name = line.split('"')[1]
+                    continue
+                if line.startswith('LUT_3D_SIZE '):
+                    size = [int(x) for x in line.split()[1:]]
+                    if len(size) == 1:
+                        size = size[0]
+                    continue
+                if line.startswith('CHANNELS '):
+                    channels = int(line.split()[1])
+                if line.startswith('LUT_1D_SIZE '):
+                    raise ValueError("1D LUT cube files aren't supported.")
+
+                try:
+                    float(line.partition(' ')[0])
+                except ValueError:
+                    pass
+                else:
+                    # Data starts
+                    break
+
+            if size is None:
+                raise ValueError('No size found in the file')
+
+            table = []
+            for i, line in enumerate(chain([line], iterator), i):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                try:
+                    pixel = [float(x) for x in line.split()]
+                except ValueError:
+                    raise ValueError("Not a number on line {}".format(i))
+                if len(pixel) != channels:
+                    raise ValueError(
+                        "Wrong number of colors on line {}".format(i))
+                table.append(tuple(pixel))
+        finally:
+            if file is not None:
+                file.close()
+
+        instance = cls(size, table, channels, target_mode)
+        if name is not None:
+            instance.name = name
+        return instance
 
     def filter(self, image):
         from . import Image
