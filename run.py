@@ -1,0 +1,1 @@
+../pillow-perf/testsuite/run.py
