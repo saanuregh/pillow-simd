@@ -65,13 +65,9 @@ ImagingColorLUT3D_linear(Imaging imOut, Imaging imIn, int table_channels,
         (size3D - 1) / 255.0 * (1<<SCALE_BITS),
         (size2D - 1) / 255.0 * (1<<SCALE_BITS),
         (size1D - 1) / 255.0 * (1<<SCALE_BITS));
-    __m256i scale_mask256 = _mm256_set1_epi32(SCALE_MASK);
     __m256i index_mul256 = _mm256_set_epi32(
         0, size1D_2D*table_channels, size1D*table_channels, table_channels,
         0, size1D_2D*table_channels, size1D*table_channels, table_channels);
-    __m256i shuffle3_256 = _mm256_set_epi8(
-        -1,-1, -1,-1, 11,10, 5,4, 9,8, 3,2, 7,6, 1,0,
-        -1,-1, -1,-1, 11,10, 5,4, 9,8, 3,2, 7,6, 1,0);
 #endif
 
     if (table_channels < 3 || table_channels > 4) {
@@ -91,6 +87,21 @@ ImagingColorLUT3D_linear(Imaging imOut, Imaging imIn, int table_channels,
     if (imOut->bands > table_channels && imOut->bands > imIn->bands) {
         return (Imaging) ImagingError_ModeError();
     }
+
+    // {
+    //     int unalignIn = 0;
+    //     int unalignOut = 0;
+    //     for (y = 0; y < imIn->ysize; y++) {
+    //         if (0x0f & (uintptr_t) imIn->image[y]) {
+    //             unalignIn += 1;
+    //         }
+    //         if (0x0f & (uintptr_t) imOut->image[y]) {
+    //             unalignOut += 1;
+    //         }
+    //     }
+    //     printf("unalignIn: %d, unalignOut: %d, table: %p\n",
+    //            unalignIn, unalignOut, table);
+    // }
 
     for (y = 0; y < imOut->ysize; y++) {
         UINT32* rowIn = (UINT32 *)imIn->image[y];
@@ -116,74 +127,21 @@ ImagingColorLUT3D_linear(Imaging imOut, Imaging imIn, int table_channels,
             int next_idx1 = _mm_cvtsi128_si32(_mm256_castsi256_si128(next_idxs));
             int next_idx2 = _mm256_extract_epi32(next_idxs, 4);
 
-            __m256i shift = _mm256_srli_epi32(
-                _mm256_and_si256(scale_mask256, index), (SCALE_BITS - SHIFT_BITS));
+            __m256i result;
 
-            __m256i shift1D, shift2D, shift3D;
-            __m256i source, left, right, result;
-            __m256i leftleft, leftright, rightleft, rightright;
-
-            shift = _mm256_or_si256(
-                _mm256_sub_epi32(_mm256_set1_epi32((1<<SHIFT_BITS)-1), shift),
-                _mm256_slli_epi32(shift, 16));
-
-            shift1D = _mm256_shuffle_epi32(shift, 0x00);
-            shift2D = _mm256_shuffle_epi32(shift, 0x55);
-            shift3D = _mm256_shuffle_epi32(shift, 0xaa);
-
-            source = _mm256_shuffle_epi8(
-                _mm256_inserti128_si256(_mm256_castsi128_si256(
+            result = _mm256_inserti128_si256(_mm256_castsi128_si256(
                     _mm_loadu_si128((__m128i *) &table[idx1 + 0])),
-                    _mm_loadu_si128((__m128i *) &table[idx2 + 0]), 1),
-                shuffle3_256);
-            leftleft = _mm256_srai_epi32(_mm256_madd_epi16(
-                source, shift1D), SHIFT_BITS);
-
-            source = _mm256_shuffle_epi8(
-                _mm256_inserti128_si256(_mm256_castsi128_si256(
-                    _mm_loadu_si128((__m128i *) &table[idx1 + size1D*3])),
-                    _mm_loadu_si128((__m128i *) &table[idx2 + size1D*3]), 1),
-                shuffle3_256);
-            leftright = _mm256_slli_epi32(_mm256_madd_epi16(
-                source, shift1D), 16 - SHIFT_BITS);
-
-            source = _mm256_shuffle_epi8(
-                _mm256_inserti128_si256(_mm256_castsi128_si256(
-                    _mm_loadu_si128((__m128i *) &table[idx1 + size1D_2D*3])),
-                    _mm_loadu_si128((__m128i *) &table[idx2 + size1D_2D*3]), 1),
-                shuffle3_256);
-            rightleft = _mm256_srai_epi32(_mm256_madd_epi16(
-                source, shift1D), SHIFT_BITS);
-            
-            source = _mm256_shuffle_epi8(
-                _mm256_inserti128_si256(_mm256_castsi128_si256(
-                    _mm_loadu_si128((__m128i *) &table[idx1 + size1D_2D*3 + size1D*3])),
-                    _mm_loadu_si128((__m128i *) &table[idx2 + size1D_2D*3 + size1D*3]), 1),
-                shuffle3_256);
-            rightright = _mm256_slli_epi32(_mm256_madd_epi16(
-                source, shift1D), 16 - SHIFT_BITS);
-
-            left = _mm256_srai_epi32(_mm256_madd_epi16(
-                _mm256_blend_epi16(leftleft, leftright, 0xaa), shift2D),
-                SHIFT_BITS);
-
-            right = _mm256_slli_epi32(_mm256_madd_epi16(
-                _mm256_blend_epi16(rightleft, rightright, 0xaa), shift2D),
-                16 - SHIFT_BITS);
-
-            result = _mm256_madd_epi16(
-                _mm256_blend_epi16(left, right, 0xaa), shift3D);
+                    _mm_loadu_si128((__m128i *) &table[idx2 + 0]), 1);
 
             result = _mm256_srai_epi32(_mm256_add_epi32(
-                _mm256_set1_epi32(PRECISION_ROUNDING<<SHIFT_BITS), result),
-                PRECISION_BITS + SHIFT_BITS);
+                _mm256_set1_epi32(PRECISION_ROUNDING), result),
+                PRECISION_BITS);
 
             result = _mm256_packs_epi32(result, result);
             result = _mm256_packus_epi16(result, result);
             rowOut[x + 0] = _mm_cvtsi128_si32(_mm256_castsi256_si128(result));
             rowOut[x + 1] = _mm256_extract_epi32(result, 4);
 
-            index = next_index;
             idx1 = next_idx1;
             idx2 = next_idx2;
         }
