@@ -1,6 +1,14 @@
 #include "Python.h"
 #include "Imaging.h"
 
+#include <emmintrin.h>
+#include <mmintrin.h>
+#include <smmintrin.h>
+
+#if defined(__AVX2__)
+    #include <immintrin.h>
+#endif
+
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
@@ -30,8 +38,8 @@ compute_params(float fRadius, int maxSize,
         radius = fRadius = round(fRadius);
     }
 
-    *ww = (UINT32) (1 << 24) / (fRadius * 2 + 1);
-    *fw = (UINT32) (1 << 24) * (fRadius - radius) / (fRadius * 2 + 1);
+    *ww = (UINT32) (1 << 18) / (fRadius * 2 + 1);
+    *fw = (UINT32) (1 << 18) * (fRadius - radius) / (fRadius * 2 + 1);
 
     *edgeA = MIN(radius + 1, maxSize);
     *edgeB = MAX(maxSize - radius - 1, 0);
@@ -536,23 +544,48 @@ ImagingHorizontalBoxBlur(Imaging imOut, Imaging imIn, float fRadius)
 /* General implementation when radius > 0 and not too big */
 void
 ImagingInnerVertBoxBlur(Imaging imOut, Imaging imIn, int lasty, int radius,
-                        int edgeA, int edgeB, UINT32 ww, UINT32 fw) 
+                        int edgeA, int edgeB, UINT16 ww, UINT16 fw) 
 {
     #define LINE 1024
 
     int x, xx, y;
     int line = LINE;
-    UINT32 acc[LINE];
+    INT16 acc[LINE];
+    __m128i weights = _mm_set1_epi32((fw << 16) | ww);
     
     UINT8 *lineOut, *lineAdd, *lineLeft, *lineRight;
     
 
     #define INNER_LOOP(line)  \
-        for (x = 0; x < line; x++) { \
-            UINT32 bulk; \
-            acc[x] += lineAdd[x] - lineLeft[x]; \
-            bulk = (acc[x] * ww) + (lineLeft[x] + lineRight[x]) * fw; \
-            lineOut[x] = (UINT8)((bulk + (1 << 23)) >> 24); \
+        for (x = 0; x < line - 15; x += 16) { \
+            __m128i add = _mm_loadu_si128((__m128i *)&lineAdd[x]); \
+            __m128i add0 = _mm_unpacklo_epi8(add, _mm_setzero_si128()); \
+            __m128i add1 = _mm_unpackhi_epi8(add, _mm_setzero_si128()); \
+            __m128i left = _mm_loadu_si128((__m128i *)&lineLeft[x]); \
+            __m128i left0 = _mm_unpacklo_epi8(left, _mm_setzero_si128()); \
+            __m128i left1 = _mm_unpackhi_epi8(left, _mm_setzero_si128()); \
+            __m128i right = _mm_loadu_si128((__m128i *)&lineRight[x]); \
+            __m128i edge0 = _mm_add_epi16(left0, \
+                _mm_unpacklo_epi8(right, _mm_setzero_si128())); \
+            __m128i edge1 = _mm_add_epi16(left1, \
+                _mm_unpackhi_epi8(right, _mm_setzero_si128())); \
+            __m128i acc0 = _mm_loadu_si128((__m128i *)&acc[x]); \
+            __m128i acc1 = _mm_loadu_si128((__m128i *)&acc[x+8]); \
+            __m128i bulk0, bulk1, bulk2, bulk3; \
+            acc0 = _mm_add_epi16(_mm_sub_epi16(acc0, left0), add0); \
+            acc1 = _mm_add_epi16(_mm_sub_epi16(acc1, left1), add1); \
+            _mm_storeu_si128((__m128i *)&acc[x], acc0); \
+            _mm_storeu_si128((__m128i *)&acc[x+8], acc1); \
+            bulk0 = _mm_madd_epi16(weights, _mm_unpacklo_epi16(acc0, edge0)); \
+            bulk1 = _mm_madd_epi16(weights, _mm_unpackhi_epi16(acc0, edge0)); \
+            bulk2 = _mm_madd_epi16(weights, _mm_unpacklo_epi16(acc1, edge1)); \
+            bulk3 = _mm_madd_epi16(weights, _mm_unpackhi_epi16(acc1, edge1)); \
+            bulk0 = _mm_packs_epi32(_mm_srli_epi32(bulk0, 18), \
+                                    _mm_srli_epi32(bulk1, 18)); \
+            bulk2 = _mm_packs_epi32(_mm_srli_epi32(bulk2, 18), \
+                                    _mm_srli_epi32(bulk3, 18)); \
+            _mm_storeu_si128((__m128i *)&lineOut[x], \
+                             _mm_packus_epi16(bulk0, bulk2)); \
         }
 
     for (xx = 0; xx < imIn->linesize; xx += LINE) {
@@ -624,23 +657,38 @@ ImagingInnerVertBoxBlur(Imaging imOut, Imaging imIn, int lasty, int radius,
 /* Implementation for large or integer radii */
 void
 ImagingInnerVertBoxBlurLarge(Imaging imOut, Imaging imIn, int lasty, int radius,
-                             int edgeA, int edgeB, UINT32 ww) 
+                             int edgeA, int edgeB, UINT16 ww) 
 {
     #define LINE 1024
 
     int x, xx, y;
     int line = LINE;
     UINT32 acc[LINE];
+    __m128i weights = _mm_set1_epi16(ww);
     
     UINT8 *lineOut, *lineAdd, *lineLeft;
     
 
     #define INNER_LOOP(line)  \
-        for (x = 0; x < line; x++) { \
-            UINT32 bulk; \
-            acc[x] += lineAdd[x] - lineLeft[x]; \
-            bulk = acc[x] * ww; \
-            lineOut[x] = (UINT8)((bulk + (1 << 23)) >> 24); \
+        for (x = 0; x < line - 15; x += 16) { \
+            __m128i add = _mm_loadu_si128((__m128i *)&lineAdd[x]); \
+            __m128i add0 = _mm_unpacklo_epi8(add, _mm_setzero_si128()); \
+            __m128i add1 = _mm_unpackhi_epi8(add, _mm_setzero_si128()); \
+            __m128i left = _mm_loadu_si128((__m128i *)&lineLeft[x]); \
+            __m128i left0 = _mm_unpacklo_epi8(left, _mm_setzero_si128()); \
+            __m128i left1 = _mm_unpackhi_epi8(left, _mm_setzero_si128()); \
+            __m128i acc0 = _mm_loadu_si128((__m128i *)&acc[x]); \
+            __m128i acc1 = _mm_loadu_si128((__m128i *)&acc[x+8]); \
+            __m128i bulk0, bulk1; \
+            acc0 = _mm_add_epi16(_mm_sub_epi16(acc0, left0), add0); \
+            acc1 = _mm_add_epi16(_mm_sub_epi16(acc1, left1), add1); \
+            _mm_storeu_si128((__m128i *)&acc[x], acc0); \
+            _mm_storeu_si128((__m128i *)&acc[x+8], acc1); \
+            bulk0 = _mm_mulhi_epu16(weights, acc0); \
+            bulk1 = _mm_mulhi_epu16(weights, acc0); \
+            bulk0 = _mm_packus_epi16(_mm_srli_epi32(bulk0, 2), \
+                                     _mm_srli_epi32(bulk1, 2)); \
+            _mm_storeu_si128((__m128i *)&lineOut[x], bulk0); \
         }
 
     for (xx = 0; xx < imIn->linesize; xx += LINE) {
@@ -709,24 +757,44 @@ ImagingInnerVertBoxBlurLarge(Imaging imOut, Imaging imIn, int lasty, int radius,
 /* Optimized implementation when radius = 0 */
 void
 ImagingInnerVertBoxBlurZero(Imaging imOut, Imaging imIn, int lasty,
-                            int edgeA, int edgeB, UINT32 ww, UINT32 fw)
+                            int edgeA, int edgeB, UINT16 ww, UINT16 fw)
 {
     #define LINE 1024
     
     int x, xx, y;
     int line = LINE;
+    __m128i weights = _mm_set1_epi32((fw << 16) | ww);
     
     UINT8 *lineOut, *lineAdd, *lineLeft, *lineRight;
     
 
     #define INNER_LOOP(line)  \
-        for (x = 0; x < line; x++) { \
-            UINT32 bulk; \
-            bulk = (lineAdd[x] * ww) + (lineLeft[x] + lineRight[x]) * fw; \
-            lineOut[x] = (UINT8)((bulk + (1 << 23)) >> 24); \
+        for (x = 0; x < line - 15; x += 16) { \
+            __m128i add = _mm_loadu_si128((__m128i *)&lineAdd[x]); \
+            __m128i add0 = _mm_unpacklo_epi8(add, _mm_setzero_si128()); \
+            __m128i add1 = _mm_unpackhi_epi8(add, _mm_setzero_si128()); \
+            __m128i left = _mm_loadu_si128((__m128i *)&lineLeft[x]); \
+            __m128i right = _mm_loadu_si128((__m128i *)&lineRight[x]); \
+            __m128i edge0 = _mm_add_epi16( \
+                _mm_unpacklo_epi8(left, _mm_setzero_si128()), \
+                _mm_unpacklo_epi8(right, _mm_setzero_si128())); \
+            __m128i edge1 = _mm_add_epi16( \
+                _mm_unpackhi_epi8(left, _mm_setzero_si128()), \
+                _mm_unpackhi_epi8(right, _mm_setzero_si128())); \
+            __m128i bulk0, bulk1, bulk2, bulk3; \
+            bulk0 = _mm_madd_epi16(weights, _mm_unpacklo_epi16(add0, edge0)); \
+            bulk1 = _mm_madd_epi16(weights, _mm_unpackhi_epi16(add0, edge0)); \
+            bulk2 = _mm_madd_epi16(weights, _mm_unpacklo_epi16(add1, edge1)); \
+            bulk3 = _mm_madd_epi16(weights, _mm_unpackhi_epi16(add1, edge1)); \
+            bulk0 = _mm_packs_epi32(_mm_srli_epi32(bulk0, 18), \
+                                    _mm_srli_epi32(bulk1, 18)); \
+            bulk2 = _mm_packs_epi32(_mm_srli_epi32(bulk2, 18), \
+                                    _mm_srli_epi32(bulk3, 18)); \
+            _mm_storeu_si128((__m128i *)&lineOut[x], \
+                             _mm_packus_epi16(bulk0, bulk2)); \
         }
 
-    for (xx = 0; xx < imIn->linesize; xx += LINE) {
+    for (xx = 0; xx < imIn->linesize - 15; xx += LINE) {
         if (xx + LINE > imIn->linesize) {
             line = imIn->linesize - xx;
         }
@@ -849,11 +917,11 @@ ImagingBoxBlur(Imaging imOut, Imaging imIn, float radius, int n)
     imFrom = imOut;
 
     /* First pass, use imIn instead of imFrom. */
-    ImagingHorizontalBoxBlur(imTo, imIn, radius);
+    ImagingVerticalBoxBlur(imTo, imIn, radius);
     for (i = 1; i < n; i ++) {
         /* Swap current working images */
         imTemp = imTo; imTo = imFrom; imFrom = imTemp;
-        ImagingHorizontalBoxBlur(imTo, imFrom, radius);
+        ImagingVerticalBoxBlur(imTo, imFrom, radius);
     }
 
     /* Reuse imOut as a source and destination there. */
