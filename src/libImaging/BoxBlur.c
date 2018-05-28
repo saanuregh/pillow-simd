@@ -554,6 +554,7 @@ ImagingInnerVertBoxBlur(Imaging imOut, Imaging imIn, int lasty, int radius,
     __m128i weights = _mm_set1_epi32((fw << 16) | ww);
     
     UINT8 *lineOut, *lineAdd, *lineLeft, *lineRight;
+    UINT8 *lineOutNext, *lineAddNext, *lineLeftNext, *lineRightNext;
     
 
     #define INNER_LOOP(line)  \
@@ -586,6 +587,10 @@ ImagingInnerVertBoxBlur(Imaging imOut, Imaging imIn, int lasty, int radius,
                                     _mm_srli_epi32(bulk3, 18)); \
             _mm_storeu_si128((__m128i *)&lineOut[x], \
                              _mm_packus_epi16(bulk0, bulk2)); \
+            _mm_prefetch(&lineOutNext[x], _MM_HINT_T0); \
+            _mm_prefetch(&lineAddNext[x], _MM_HINT_T0); \
+            _mm_prefetch(&lineLeftNext[x], _MM_HINT_T0); \
+            _mm_prefetch(&lineRightNext[x], _MM_HINT_T0); \
         }
 
     for (xx = 0; xx < imIn->linesize; xx += LINE) {
@@ -611,6 +616,10 @@ ImagingInnerVertBoxBlur(Imaging imOut, Imaging imIn, int lasty, int radius,
                 lineAdd = (UINT8 *)imIn->image[y + radius] + xx;
                 lineLeft = (UINT8 *)imIn->image[0] + xx;
                 lineRight = (UINT8 *)imIn->image[y + radius + 1] + xx;
+                lineOutNext = (UINT8 *)imOut->image[y + 1] + xx;
+                lineAddNext = (UINT8 *)imIn->image[y + 1 + radius] + xx;
+                lineLeftNext = (UINT8 *)imIn->image[0] + xx;
+                lineRightNext = (UINT8 *)imIn->image[y + 1 + radius + 1] + xx;
                 INNER_LOOP(line);
             }
             for (y = edgeA; y < edgeB; y++) {
@@ -618,12 +627,16 @@ ImagingInnerVertBoxBlur(Imaging imOut, Imaging imIn, int lasty, int radius,
                 lineAdd = (UINT8 *)imIn->image[y + radius] + xx;
                 lineLeft = (UINT8 *)imIn->image[y - radius - 1] + xx;
                 lineRight = (UINT8 *)imIn->image[y + radius + 1] + xx;
+                lineOutNext = (UINT8 *)imOut->image[y + 1] + xx;
+                lineAddNext = (UINT8 *)imIn->image[y + 1 + radius] + xx;
+                lineLeftNext = (UINT8 *)imIn->image[y + 1 - radius - 1] + xx;
+                lineRightNext = (UINT8 *)imIn->image[y + 1 + radius + 1] + xx;
                 INNER_LOOP(line);
             }
             for (y = edgeB; y <= lasty; y++) {
-                lineOut = (UINT8 *)imOut->image[y] + xx;
-                lineLeft = (UINT8 *)imIn->image[y - radius - 1] + xx;
-                lineAdd = lineRight = (UINT8 *)imIn->image[lasty] + xx;
+                lineOutNext = lineOut = (UINT8 *)imOut->image[y] + xx;
+                lineLeftNext = lineLeft = (UINT8 *)imIn->image[y - radius - 1] + xx;
+                lineAddNext = lineRightNext = lineAdd = lineRight = (UINT8 *)imIn->image[lasty] + xx;
                 INNER_LOOP(line);
             }
         } else {
@@ -632,18 +645,25 @@ ImagingInnerVertBoxBlur(Imaging imOut, Imaging imIn, int lasty, int radius,
                 lineAdd = (UINT8 *)imIn->image[y + radius] + xx;
                 lineLeft = (UINT8 *)imIn->image[0] + xx;
                 lineRight = (UINT8 *)imIn->image[y + radius + 1] + xx;
+                lineOutNext = (UINT8 *)imOut->image[y + 1] + xx;
+                lineAddNext = (UINT8 *)imIn->image[y + 1 + radius] + xx;
+                lineLeftNext = (UINT8 *)imIn->image[0] + xx;
+                lineRightNext = (UINT8 *)imIn->image[y + 1 + radius + 1] + xx;
                 INNER_LOOP(line);
             }
             for (y = edgeB; y < edgeA; y++) {
                 lineOut = (UINT8 *)imOut->image[y] + xx;
                 lineLeft = (UINT8 *)imIn->image[0] + xx;
                 lineAdd = lineRight = (UINT8 *)imIn->image[lasty] + xx;
+                lineOutNext = (UINT8 *)imOut->image[y + 1] + xx;
+                lineLeftNext = (UINT8 *)imIn->image[0] + xx;
+                lineAddNext = lineRightNext = (UINT8 *)imIn->image[lasty] + xx;
                 INNER_LOOP(line);
             }
             for (y = edgeA; y <= lasty; y++) {
-                lineOut = (UINT8 *)imOut->image[y] + xx;
-                lineLeft = (UINT8 *)imIn->image[y - radius - 1] + xx;
-                lineAdd = lineRight = (UINT8 *)imIn->image[lasty] + xx;
+                lineOutNext = lineOut = (UINT8 *)imOut->image[y] + xx;
+                lineLeftNext = lineLeft = (UINT8 *)imIn->image[y - radius - 1] + xx;
+                lineAddNext = lineRightNext = lineAdd = lineRight = (UINT8 *)imIn->image[lasty] + xx;
                 INNER_LOOP(line);
             }
         }
@@ -667,6 +687,7 @@ ImagingInnerVertBoxBlurLarge(Imaging imOut, Imaging imIn, int lasty, int radius,
     __m128i weights = _mm_set1_epi16(ww);
     
     UINT8 *lineOut, *lineAdd, *lineLeft;
+    UINT8 *lineOutNext, *lineAddNext, *lineLeftNext;
     
 
     #define INNER_LOOP(line)  \
@@ -689,6 +710,9 @@ ImagingInnerVertBoxBlurLarge(Imaging imOut, Imaging imIn, int lasty, int radius,
             bulk0 = _mm_packus_epi16(_mm_srli_epi32(bulk0, 2), \
                                      _mm_srli_epi32(bulk1, 2)); \
             _mm_storeu_si128((__m128i *)&lineOut[x], bulk0); \
+            _mm_prefetch(&lineOutNext[x], _MM_HINT_T0); \
+            _mm_prefetch(&lineAddNext[x], _MM_HINT_T0); \
+            _mm_prefetch(&lineLeftNext[x], _MM_HINT_T0); \
         }
 
     for (xx = 0; xx < imIn->linesize; xx += LINE) {
@@ -713,18 +737,24 @@ ImagingInnerVertBoxBlurLarge(Imaging imOut, Imaging imIn, int lasty, int radius,
                 lineOut = (UINT8 *)imOut->image[y] + xx;
                 lineAdd = (UINT8 *)imIn->image[y + radius] + xx;
                 lineLeft = (UINT8 *)imIn->image[0] + xx;
+                lineOutNext = (UINT8 *)imOut->image[y + 1] + xx;
+                lineAddNext = (UINT8 *)imIn->image[y + 1 + radius] + xx;
+                lineLeftNext = (UINT8 *)imIn->image[0] + xx;
                 INNER_LOOP(line);
             }
             for (y = edgeA; y < edgeB; y++) {
                 lineOut = (UINT8 *)imOut->image[y] + xx;
                 lineAdd = (UINT8 *)imIn->image[y + radius] + xx;
                 lineLeft = (UINT8 *)imIn->image[y - radius - 1] + xx;
+                lineOutNext = (UINT8 *)imOut->image[y + 1] + xx;
+                lineAddNext = (UINT8 *)imIn->image[y + 1 + radius] + xx;
+                lineLeftNext = (UINT8 *)imIn->image[y + 1 - radius - 1] + xx;
                 INNER_LOOP(line);
             }
             for (y = edgeB; y <= lasty; y++) {
-                lineOut = (UINT8 *)imOut->image[y] + xx;
-                lineLeft = (UINT8 *)imIn->image[y - radius - 1] + xx;
-                lineAdd = (UINT8 *)imIn->image[lasty] + xx;
+                lineOutNext = lineOut = (UINT8 *)imOut->image[y] + xx;
+                lineLeftNext = lineLeft = (UINT8 *)imIn->image[y - radius - 1] + xx;
+                lineAddNext = lineAdd = (UINT8 *)imIn->image[lasty] + xx;
                 INNER_LOOP(line);
             }
         } else {
@@ -732,18 +762,24 @@ ImagingInnerVertBoxBlurLarge(Imaging imOut, Imaging imIn, int lasty, int radius,
                 lineOut = (UINT8 *)imOut->image[y] + xx;
                 lineAdd = (UINT8 *)imIn->image[y + radius] + xx;
                 lineLeft = (UINT8 *)imIn->image[0] + xx;
+                lineOutNext = (UINT8 *)imOut->image[y + 1] + xx;
+                lineAddNext = (UINT8 *)imIn->image[y + 1 + radius] + xx;
+                lineLeftNext = (UINT8 *)imIn->image[0] + xx;
                 INNER_LOOP(line);
             }
             for (y = edgeB; y < edgeA; y++) {
                 lineOut = (UINT8 *)imOut->image[y] + xx;
                 lineLeft = (UINT8 *)imIn->image[0] + xx;
                 lineAdd = (UINT8 *)imIn->image[lasty] + xx;
+                lineOutNext = (UINT8 *)imOut->image[y + 1] + xx;
+                lineLeftNext = (UINT8 *)imIn->image[0] + xx;
+                lineAddNext = (UINT8 *)imIn->image[lasty] + xx;
                 INNER_LOOP(line);
             }
             for (y = edgeA; y <= lasty; y++) {
-                lineOut = (UINT8 *)imOut->image[y] + xx;
-                lineLeft = (UINT8 *)imIn->image[y - radius - 1] + xx;
-                lineAdd = (UINT8 *)imIn->image[lasty] + xx;
+                lineOutNext = lineOut = (UINT8 *)imOut->image[y] + xx;
+                lineLeftNext = lineLeft = (UINT8 *)imIn->image[y - radius - 1] + xx;
+                lineAddNext = lineAdd = (UINT8 *)imIn->image[lasty] + xx;
                 INNER_LOOP(line);
             }
         }
@@ -766,6 +802,7 @@ ImagingInnerVertBoxBlurZero(Imaging imOut, Imaging imIn, int lasty,
     __m128i weights = _mm_set1_epi32((fw << 16) | ww);
     
     UINT8 *lineOut, *lineAdd, *lineLeft, *lineRight;
+    UINT8 *lineOutNext, *lineAddNext, *lineLeftNext, *lineRightNext;
     
 
     #define INNER_LOOP(line)  \
@@ -792,6 +829,10 @@ ImagingInnerVertBoxBlurZero(Imaging imOut, Imaging imIn, int lasty,
                                     _mm_srli_epi32(bulk3, 18)); \
             _mm_storeu_si128((__m128i *)&lineOut[x], \
                              _mm_packus_epi16(bulk0, bulk2)); \
+            _mm_prefetch(&lineOutNext[x], _MM_HINT_T0); \
+            _mm_prefetch(&lineAddNext[x], _MM_HINT_T0); \
+            _mm_prefetch(&lineLeftNext[x], _MM_HINT_T0); \
+            _mm_prefetch(&lineRightNext[x], _MM_HINT_T0); \
         }
 
     for (xx = 0; xx < imIn->linesize - 15; xx += LINE) {
@@ -801,10 +842,10 @@ ImagingInnerVertBoxBlurZero(Imaging imOut, Imaging imIn, int lasty,
 
         if (edgeA <= edgeB) {
             for (y = 0; y < edgeA; y++) {
-                lineOut = (UINT8 *)imOut->image[y] + xx;
-                lineAdd = (UINT8 *)imIn->image[y] + xx;
-                lineLeft = (UINT8 *)imIn->image[0] + xx;
-                lineRight = (UINT8 *)imIn->image[y + 1] + xx;
+                lineOutNext = lineOut = (UINT8 *)imOut->image[y] + xx;
+                lineAddNext = lineAdd = (UINT8 *)imIn->image[y] + xx;
+                lineLeftNext = lineLeft = (UINT8 *)imIn->image[0] + xx;
+                lineRightNext = lineRight = (UINT8 *)imIn->image[y + 1] + xx;
                 INNER_LOOP(line);
             }
             for (y = edgeA; y < edgeB; y++) {
@@ -812,8 +853,16 @@ ImagingInnerVertBoxBlurZero(Imaging imOut, Imaging imIn, int lasty,
                 lineAdd = (UINT8 *)imIn->image[y] + xx;
                 lineLeft = (UINT8 *)imIn->image[y - 1] + xx;
                 lineRight = (UINT8 *)imIn->image[y + 1] + xx;
+                lineOutNext = (UINT8 *)imOut->image[y + 1] + xx;
+                lineAddNext = (UINT8 *)imIn->image[y + 1] + xx;
+                lineLeftNext = (UINT8 *)imIn->image[y + 1 - 1] + xx;
+                lineRightNext = (UINT8 *)imIn->image[y + 1 + 1] + xx;
                 INNER_LOOP(line);
             }
+            lineOutNext = (UINT8 *)imOut->image[0] + xx*2;
+            lineAddNext = (UINT8 *)imIn->image[0] + xx*2;
+            lineLeftNext = (UINT8 *)imIn->image[0] + xx*2;
+            lineRightNext = (UINT8 *)imIn->image[1] + xx*2;
             for (y = edgeB; y <= lasty; y++) {
                 lineOut = (UINT8 *)imOut->image[y] + xx;
                 lineLeft = (UINT8 *)imIn->image[y - 1] + xx;
@@ -822,9 +871,9 @@ ImagingInnerVertBoxBlurZero(Imaging imOut, Imaging imIn, int lasty,
             }
         } else {
             for (y = edgeB; y < edgeA; y++) {
-                lineOut = (UINT8 *)imOut->image[y] + xx;
-                lineLeft = (UINT8 *)imIn->image[0] + xx;
-                lineAdd = lineRight = (UINT8 *)imIn->image[lasty] + xx;
+                lineOutNext = lineOut = (UINT8 *)imOut->image[y] + xx;
+                lineLeftNext = lineLeft = (UINT8 *)imIn->image[0] + xx;
+                lineAddNext = lineRightNext = lineAdd = lineRight = (UINT8 *)imIn->image[lasty] + xx;
                 INNER_LOOP(line);
             }
         }
