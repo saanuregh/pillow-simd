@@ -1,3 +1,18 @@
+# This is a pillow-simd fork of https://github.com/uploadcare/pillow-simd adapted for windows avx2 compling
+Couldnt get avx2 to work on pillow-simd, the argument was '-msse4' instead of '/arch:AVX2'.
+Supports libjpeg-turbo.
+Requires all the MSVC stuff
+
+## Installation
+Installation for powershell
+```powershell
+> git clone https://github.com/saanuregh/pillow-simd.git
+> cd pillow-simd
+> $env:CPATH += ';<pathto_libjpeg-turbo>\include;'
+> $env:LIBRARY_PATH += ';<pathto_libjpeg-turbo>\lib;'
+> python setup.py -v  install
+```
+
 # Pillow-SIMD
 
 Pillow-SIMD is "following" [Pillow][original-docs].
