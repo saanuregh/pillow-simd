@@ -138,7 +138,6 @@ NAME = 'Pillow-SIMD'
 PILLOW_VERSION = get_version()
 JPEG_ROOT = None
 JPEG2K_ROOT = None
-ZLIB_ROOT = None
 IMAGEQUANT_ROOT = None
 TIFF_ROOT = None
 FREETYPE_ROOT = None
@@ -162,10 +161,10 @@ def _pkg_config(name):
 
 class pil_build_ext(build_ext):
     class feature:
-        features = ['zlib', 'jpeg', 'tiff', 'freetype', 'lcms', 'webp',
+        features = ['jpeg', 'tiff', 'freetype', 'lcms', 'webp',
                     'webpmux', 'jpeg2000', 'imagequant']
 
-        required = {'jpeg', 'zlib'}
+        required = {'jpeg'}
 
         def __init__(self):
             for f in self.features:
@@ -240,7 +239,6 @@ class pil_build_ext(build_ext):
         for root_name, lib_name in dict(JPEG_ROOT="libjpeg",
                                         JPEG2K_ROOT="libopenjp2",
                                         TIFF_ROOT=("libtiff-5", "libtiff-4"),
-                                        ZLIB_ROOT="zlib",
                                         FREETYPE_ROOT="freetype2",
                                         LCMS_ROOT="lcms2",
                                         IMAGEQUANT_ROOT="libimagequant"
@@ -387,7 +385,6 @@ class pil_build_ext(build_ext):
                         "Unable to identify Linux platform: `%s`" % platform_)
 
                 # termux support for android.
-                # system libraries (zlib) are installed in /system/lib
                 # headers are at $PREFIX/include
                 # user libs are at $PREFIX/lib
                 if os.environ.get('ANDROID_ROOT', None):
@@ -453,15 +450,6 @@ class pil_build_ext(build_ext):
         # look for available libraries
 
         feature = self.feature
-
-        if feature.want('zlib'):
-            _dbg('Looking for zlib')
-            if _find_include_file(self, "zlib.h"):
-                if _find_library_file(self, "z"):
-                    feature.zlib = "z"
-                elif (sys.platform == "win32" and
-                      _find_library_file(self, "zlib")):
-                    feature.zlib = "zlib"  # alternative name
 
         if feature.want('jpeg'):
             _dbg('Looking for jpeg')
@@ -585,7 +573,7 @@ class pil_build_ext(build_ext):
 
         for f in feature:
             if not getattr(feature, f) and feature.require(f):
-                if f in ('jpeg', 'zlib'):
+                if f in ('jpeg'):
                     raise RequiredDependencyException(f)
                 raise DependencyException(f)
 
@@ -608,9 +596,6 @@ class pil_build_ext(build_ext):
             defs.append(("HAVE_OPENJPEG", None))
             if sys.platform == "win32":
                 defs.append(("OPJ_STATIC", None))
-        if feature.zlib:
-            libs.append(feature.zlib)
-            defs.append(("HAVE_LIBZ", None))
         if feature.imagequant:
             libs.append(feature.imagequant)
             defs.append(("HAVE_LIBIMAGEQUANT", None))
@@ -631,7 +616,7 @@ class pil_build_ext(build_ext):
                            files,
                            libraries=libs,
                            define_macros=defs,
-                           extra_compile_args=['-msse4']))]
+                           extra_compile_args=['/arch:AVX2']))]
 
         #
         # additional libraries
@@ -699,7 +684,6 @@ class pil_build_ext(build_ext):
             (feature.jpeg, "JPEG"),
             (feature.jpeg2000, "OPENJPEG (JPEG2000)",
              feature.openjpeg_version),
-            (feature.zlib, "ZLIB (PNG/ZIP)"),
             (feature.imagequant, "LIBIMAGEQUANT"),
             (feature.tiff, "LIBTIFF"),
             (feature.freetype, "FREETYPE2"),
